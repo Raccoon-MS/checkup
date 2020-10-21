@@ -108,19 +108,24 @@ fi
 today_timestamp=$(date +%s)
 date_string=$(date +"It's %I:%M %p of the %A %d %B %Y")
 
-#LAST UPDATE (REMOVE IF NOT ON ARCH)
-last_update_date=$(cat /var/log/pacman.log | grep "starting full system upgrade" | tail -n 1 | cut -d" " -f1 | cut -c 2- | rev | cut -c 2- | rev)
-last_update_reformat=$(date -d"$last_update_date" +"%d/%m/%Y at %I:%M %p")
-last_update_reformat_classic=$(date -d"$last_update_date" +"%m/%d/%Y")
-last_update_timestamp=$(date -d"$last_update_reformat_classic" +%s)
-last_update_ago=$(( (today_timestamp - last_update_timestamp) / 86400 ))
+#LAST UPDATE
+if [ -f /var/log/pacman.log ] ; then
+	last_update_date=$(cat /var/log/pacman.log | grep "starting full system upgrade" | tail -n 1 | cut -d" " -f1 | cut -c 2- | rev | cut -c 2- | rev)
+	last_update_reformat=$(date -d"$last_update_date" +"%d/%m/%Y at %I:%M %p")
+	last_update_reformat_classic=$(date -d"$last_update_date" +"%m/%d/%Y")
+	last_update_timestamp=$(date -d"$last_update_reformat_classic" +%s)
+	last_update_ago=$(( (today_timestamp - last_update_timestamp) / 86400 ))
 
-if [ $last_update_ago -eq 0 ] ; then
-	last_update_ago="$CGREEN$last_update_ago$CDEFAULT"
-elif [ $last_update_ago -lt 7 ] ; then
-	last_update_ago="$CYELLOW$last_update_ago$CDEFAULT"
+	if [ $last_update_ago -eq 0 ] ; then
+		last_update_ago="$CGREEN$last_update_ago$CDEFAULT"
+	elif [ $last_update_ago -lt 7 ] ; then
+		last_update_ago="$CYELLOW$last_update_ago$CDEFAULT"
+	else
+		last_update_ago="$CRED$last_update_ago$CDEFAULT"
+	fi
+	update_info="Last system update was on the $last_update_reformat, $last_update_ago days ago"
 else
-	last_update_ago="$CRED$last_update_ago$CDEFAULT"
+	update_info="Update informations unavailable"
 fi
 
 #DISK USAGE
@@ -149,7 +154,7 @@ bars+=("$full_line")
 #DISPLAY
 echo -e "${BOLD}Hi $USER !$RESET\n"
 echo -e "$date_string"
-echo -e "Last system update was on the $last_update_reformat, $last_update_ago days ago" #REMOVE IF NOT ON ARCH
+echo -e "$update_info"
 echo -e ""
 
 echo -e "${BOLD}About the battery:${RESET}"
