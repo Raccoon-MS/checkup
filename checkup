@@ -1,0 +1,169 @@
+#!/bin/bash
+
+if ! [ -f ~/.config/checkup/checkup.conf ] ; then
+	! [ -d ~/.config ] && mkdir ~/.config
+	! [ -d ~/.config/checkup ] && mkdir ~/.config/checkup
+	echo "SHOW_UP_ON_EACH_TERMINAL=0" >> ~/.config/checkup/checkup.conf
+fi
+
+SHOW_UP_ON_EACH_TERMINAL=$(cat ~/.config/checkup/checkup.conf | grep SHOW_UP_ON_EACH_TERMINAL | cut -d"=" -f2)
+
+[ -f /tmp/checkup.tmp ] && [ "$SHOW_UP_ON_EACH_TERMINAL" != "" ] && [ $SHOW_UP_ON_EACH_TERMINAL -eq 0 ] && exit 1
+
+touch /tmp/checkup.tmp
+
+BOLD="\e[1m"
+ULINE="\e[4m"
+BLINK="\e[5m"
+RESET="\e[0m"
+
+CDEFAULT="\e[39m"
+CRED="\e[31m"
+CGREEN="\e[32m"
+CYELLOW="\e[33m"
+CBLUE="\e[34m"
+CCYAN="\e[36m"
+CMAGENTA="\e[35m"
+CLIGHTBLUE="\e[94m"
+CWHITE="\e[97mW"
+
+BGDEFAULT="\e[49m"
+BGRED="\e[41m"
+BGGREEN="\e[42m"
+BGLIGHTRED="\e[101m"
+BGYELLOW="\e[43m"
+BGBLACK="\e[40m"
+
+function progress_bar {
+	#args: value min max fill_char step color_changes...
+	pb="$BOLD["
+	pb_value=$1
+	pb_min=$2
+	pb_max=$3
+	pb_char=$4
+	pb_step=$5
+	i=$pb_min
+	shift; shift ; shift ; shift ; shift
+	while [ $i -lt $pb_value ] ; do
+		for j in $(seq 1 2 $#) ; do
+			if [ $i -eq ${!j} ] ; then
+				jp1=$((j+1))
+				pb="$pb${!jp1}"
+			fi
+		done
+		pb="$pb$pb_char"
+		i=$((i+pb_step))
+	done
+	while [ $i -lt $pb_max ] ; do
+		pb="$pb "
+		i=$((i+pb_step))
+	done
+	pb="$pb$CDEFAULT]$RESET"
+	echo -e "$pb"
+}
+
+#BATTERY DATA
+battery_charge_info=$(acpi -bi | head -n 1)
+battery_life_info=$(acpi -bi | tail -n 1)
+
+battery_state=$(echo "$battery_charge_info" | cut -d" " -f3 | cut -d"," -f1)
+battery_percent=$(echo "$battery_charge_info" | cut -d" " -f4 | cut -d"%" -f1)
+battery_time_left=$(echo "$battery_charge_info" | cut -d" " -f5)
+battery_health=$(echo "$battery_life_info" | rev | cut -d" " -f1 | rev | cut -d"%" -f1)
+
+battery_percent_bar=$(progress_bar $battery_percent 0 100 \# 2 0 $CRED 20 $CYELLOW 70 $CGREEN)
+[ "$battery_state" = "Discharging" ] && battery_plugged="[ ]" || battery_plugged="[${CLIGHTBLUE}X${CDEFAULT}]"
+
+battery_health_bar=$(progress_bar $battery_health 0 100 \# 2 0 $CRED 50 $CYELLOW 80 $CGREEN)
+
+#BATTERY REMAINING TIME
+remaining_hours=$(echo "$battery_time_left" | cut -d":" -f1)
+remaining_hours=${remaining_hours##0}
+remaining_minutes=$(echo "$battery_time_left" | cut -d":" -f2)
+remaining_minutes=${remaining_minutes##0}
+hours=$(date +%H)
+minutes=$(date +%M)
+target_hours=$((hours + remaining_hours))
+target_minutes=$((hours + remaining_minutes))
+if [ $target_hours -ge 24 ] ; then
+	target_hours=$((target_hours - 24))
+fi
+if [ $target_minutes -ge 60 ] ; then
+	target_minutes=$((target_minutes - 60))
+fi
+if [ "$battery_state" = "Full" ] && [ "$battery_time_left" = "" ] ; then
+	battery_remaining="Full and plugged"
+else
+	battery_remaining="${remaining_hours} hour"
+	[ $remaining_hours -gt 1 ] && battery_remaining="${battery_remaining}s"
+	battery_remaining="${battery_remaining} and $remaining_minutes minute"
+	[ $remaining_minutes -gt 1 ] && battery_remaining="${battery_remaining}s"
+	[ "$battery_state" = "Discharging" ] && battery_remaining="$battery_remaining until shutdown" || battery_remaining="$battery_remaining until full charge"
+	[ $target_hours -lt 10 ] && target_hours="0$target_hours"
+	[ $target_minutes -lt 10 ] && target_minutes="0$target_minutes"
+	battery_remaining="${battery_remaining}. Estimated at ${target_hours}:$target_minutes"
+fi
+
+#DATE
+today_timestamp=$(date +%s)
+date_string=$(date +"It's %I:%M %p of the %A %d %B %Y")
+
+#LAST UPDATE (REMOVE IF NOT ON ARCH)
+last_update_date=$(cat /var/log/pacman.log | grep "starting full system upgrade" | tail -n 1 | cut -d" " -f1 | cut -c 2- | rev | cut -c 2- | rev)
+last_update_reformat=$(date -d"$last_update_date" +"%d/%m/%Y at %I:%M %p")
+last_update_reformat_classic=$(date -d"$last_update_date" +"%m/%d/%Y")
+last_update_timestamp=$(date -d"$last_update_reformat_classic" +%s)
+last_update_ago=$(( (today_timestamp - last_update_timestamp) / 86400 ))
+
+if [ $last_update_ago -eq 0 ] ; then
+	last_update_ago="$CGREEN$last_update_ago$CDEFAULT"
+elif [ $last_update_ago -lt 7 ] ; then
+	last_update_ago="$CYELLOW$last_update_ago$CDEFAULT"
+else
+	last_update_ago="$CRED$last_update_ago$CDEFAULT"
+fi
+
+#DISK USAGE
+total_space=$(df --total | tail -n 1 | tr -s ' ' | cut -d" " -f2)
+total_use=$(du -s | cut -d"	" -f1)
+total_bar_percent=$(( (100 * total_use) / total_space ))
+total_bar=$(progress_bar $total_bar_percent 0 100 \# 2 0 $CGREEN 70 $CYELLOW 80 $CRED)
+
+parts=$(df | grep "^/dev")
+bars=()
+
+while read -r line ; do
+	space=$(echo "$line" | tr -s ' ' | cut -d" " -f2)
+	use=$(echo "$line" | tr -s ' ' | cut -d" " -f3)
+	name=$(echo "$line" | rev | cut -d" " -f1 | rev)
+	percent=$(( (100 * use) / space ))
+	bar=$(progress_bar $percent 0 100 \# 2 0 $CGREEN 70 $CYELLOW 80 $CRED)
+	full_line="$name	$bar ${percent}%"
+	#full_line=$(echo "$full_line" | tr -d '\n')
+	bars+=("$full_line")
+done <<< "$parts"
+full_line="${BOLD}Total:$RESET	$total_bar ${BOLD}${total_bar_percent}%${RESET}"
+bars+=("$full_line")
+
+
+#DISPLAY
+echo -e "${BOLD}Hi $USER !$RESET\n"
+echo -e "$date_string"
+echo -e "Last system update was on the $last_update_reformat, $last_update_ago days ago" #REMOVE IF NOT ON ARCH
+echo -e ""
+
+echo -e "${BOLD}About the battery:${RESET}"
+echo -e "Plugged: $battery_plugged $battery_percent_bar ${battery_percent}%"
+echo -e "             $battery_remaining"
+echo -e "Health:      $battery_health_bar ${battery_health}%"
+echo -e ""
+
+
+echo -e "${BOLD}About the storage:${RESET}"
+for ((i = 0; i < ${#bars[@]}; i++)) ; do
+	echo -e "${bars[$i]}"
+done
+echo -e ""
+
+[ $hours -lt 20 ] && echo -e "Have a good day !" || echo -e "Have a good night !"
+echo -e ""
