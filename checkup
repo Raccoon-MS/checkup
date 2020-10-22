@@ -141,6 +141,8 @@ function update_checkup {
 	else
 		update_info="Update informations unavailable"
 	fi
+
+	echo -e "$update_info"
 }
 
 function disk_checkup {
