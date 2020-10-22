@@ -85,7 +85,7 @@ function battery_checkup {
 		hours=$(date +%H)
 		minutes=$(date +%M)
 		target_hours=$((hours + remaining_hours))
-		target_minutes=$((hours + remaining_minutes))
+		target_minutes=$((minutes + remaining_minutes))
 		if [ $target_hours -ge 24 ] ; then
 			target_hours=$((target_hours - 24))
 		fi
